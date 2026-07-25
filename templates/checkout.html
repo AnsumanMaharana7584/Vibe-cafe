@@ -36,94 +36,41 @@
       {% endif %}
     </div>
 
-    {% if order and payments_enabled %}
-      <div class="card" style="text-align: center;">
-        <h3>Complete Payment</h3>
-        <p>Order #{{ order.id }} is ready. Pay securely with Razorpay.</p>
-        <button type="button" id="razorpay-btn" class="btn-primary" style="border: none; cursor: pointer; margin-top: 1rem;">
-          Pay ₹{{ total }}
-        </button>
-      </div>
-    {% else %}
-      <div class="card">
-        <h3>Delivery Details</h3>
-        <form method="post" novalidate>
-          {{ form.hidden_tag() }}
+    <div class="card">
+      <h3>Delivery Details</h3>
+      <form method="post" novalidate>
+        {{ form.hidden_tag() }}
 
-          <div class="form-group" style="margin-bottom: 1rem;">
-            <label for="name">{{ form.name.label.text }}</label>
-            {{ form.name(class="form-control", style="width: 100%;") }}
-          </div>
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label for="name">{{ form.name.label.text }}</label>
+          {{ form.name(class="form-control", style="width: 100%;") }}
+        </div>
 
-          <div class="form-group" style="margin-bottom: 1rem;">
-            <label for="email">{{ form.email.label.text }}</label>
-            {{ form.email(class="form-control", style="width: 100%;") }}
-          </div>
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label for="email">{{ form.email.label.text }}</label>
+          {{ form.email(class="form-control", style="width: 100%;") }}
+        </div>
 
-          <div class="form-group" style="margin-bottom: 1.5rem;">
-            <label for="phone">{{ form.phone.label.text }}</label>
-            {{ form.phone(class="form-control", style="width: 100%;", placeholder="10-digit mobile number") }}
-          </div>
+        <div class="form-group" style="margin-bottom: 1.5rem;">
+          <label for="phone">{{ form.phone.label.text }}</label>
+          {{ form.phone(class="form-control", style="width: 100%;", placeholder="10-digit mobile number") }}
+        </div>
 
-          {% if payments_enabled %}
-            <p style="margin-bottom: 1rem; font-size: 0.95rem;">You will be redirected to Razorpay after submitting your details.</p>
-          {% else %}
-            <p style="margin-bottom: 1rem; font-size: 0.95rem; color: #6f4e37;">
-              <i class="fas fa-info-circle"></i> Demo payment mode — no real charge. Add Razorpay keys in <code>.env</code> for live payments.
-            </p>
-          {% endif %}
+        {% if payments_enabled %}
+          <p style="margin-bottom: 1rem; font-size: 0.95rem;">
+            <i class="fas fa-mobile-alt"></i> You will be redirected to <strong>PhonePe</strong> to pay securely via UPI, cards, or net banking.
+          </p>
+        {% else %}
+          <p style="margin-bottom: 1rem; font-size: 0.95rem; color: #6f4e37;">
+            <i class="fas fa-info-circle"></i> Demo payment mode — no real charge. Add PhonePe keys in <code>.env</code> for live payments.
+          </p>
+        {% endif %}
 
-          {{ form.submit(class="btn-primary", style="border: none; cursor: pointer;") }}
-        </form>
-      </div>
-    {% endif %}
+        {{ form.submit(class="btn-primary", style="border: none; cursor: pointer;") }}
+      </form>
+    </div>
 
     <p style="margin-top: 1.5rem;"><a href="{{ url_for('cart') }}">&larr; Back to cart</a></p>
   </div>
 </div>
-
-{% if order and payments_enabled %}
-<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-<script>
-  document.getElementById('razorpay-btn').onclick = function () {
-    var options = {
-      key: "{{ razorpay_key }}",
-      amount: {{ (total * 100)|int }},
-      currency: "INR",
-      name: "Vibe Cafe",
-      description: "Order #{{ order.id }}",
-      order_id: "{{ order.razorpay_order_id }}",
-      prefill: {
-        name: "{{ order.customer_name }}",
-        email: "{{ order.customer_email }}",
-        contact: "{{ order.customer_phone }}"
-      },
-      theme: { color: "#6f4e37" },
-      handler: function (response) {
-        fetch("{{ url_for('verify_payment') }}", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            razorpay_payment_id: response.razorpay_payment_id,
-            razorpay_order_id: response.razorpay_order_id,
-            razorpay_signature: response.razorpay_signature
-          })
-        })
-        .then(function (res) { return res.json(); })
-        .then(function (data) {
-          if (data.success) {
-            window.location.href = data.redirect;
-          } else {
-            alert(data.message || "Payment verification failed.");
-          }
-        })
-        .catch(function () {
-          alert("Payment verification failed. Please contact support.");
-        });
-      }
-    };
-    new Razorpay(options).open();
-  };
-</script>
-{% endif %}
 {% endblock %}

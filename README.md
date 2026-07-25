@@ -6,7 +6,7 @@ A Flask web app for **Vibe Cafe** — browse the menu, search items, manage a ca
 
 - Menu browsing with item detail pages
 - Shopping cart (session-based)
-- Checkout with Razorpay payments (demo mode without API keys)
+- Checkout with PhonePe payments (demo mode without API keys)
 - User signup and login with 10% member discount
 - Search across menu items and users
 - Member discount page
@@ -42,9 +42,9 @@ A Flask web app for **Vibe Cafe** — browse the menu, search items, manage a ca
 
    Open [http://127.0.0.1:5000](http://127.0.0.1:5000) in your browser.
 
-## Payment setup
+## Payment setup (PhonePe)
 
-The app supports **Razorpay** for INR payments. Without API keys, it runs in **demo mode** (orders complete instantly with no real charge).
+The app uses **PhonePe Payment Gateway** for INR payments. Without API keys, it runs in **demo mode** (orders complete instantly with no real charge).
 
 1. Copy the example env file:
 
@@ -53,14 +53,22 @@ The app supports **Razorpay** for INR payments. Without API keys, it runs in **d
    # cp .env.example .env        # macOS / Linux
    ```
 
-2. Add your Razorpay test keys from [dashboard.razorpay.com](https://dashboard.razorpay.com/):
+2. Get credentials from the [PhonePe Business Developer Portal](https://developer.phonepe.com/) and add them to `.env`:
 
    ```
-   RAZORPAY_KEY_ID=rzp_test_xxxxx
-   RAZORPAY_KEY_SECRET=your_secret_key
+   PHONEPE_CLIENT_ID=your_client_id
+   PHONEPE_CLIENT_SECRET=your_client_secret
+   PHONEPE_CLIENT_VERSION=1
+   PHONEPE_ENV=SANDBOX
    ```
 
-3. Restart the app, add items to cart, and go to **Checkout**.
+3. Restart the app, add items to cart, and go to **Checkout**. You will be redirected to PhonePe to pay via UPI, card, or net banking.
+
+4. **Optional webhook** — set `PHONEPE_CALLBACK_USERNAME` and `PHONEPE_CALLBACK_PASSWORD` in `.env`, then configure this URL in the PhonePe dashboard:
+
+   ```
+   https://your-domain.com/payment/phonepe/webhook
+   ```
 
 Logged-in members automatically receive a **10% discount** at checkout.
 
@@ -68,6 +76,7 @@ Logged-in members automatically receive a **10% discount** at checkout.
 
 ```
 app.py              # Main Flask application
+phonepe_payments.py # PhonePe gateway helpers
 forms.py            # WTForms for signup/login
 requirements.txt    # Python dependencies
 static/             # Images and media

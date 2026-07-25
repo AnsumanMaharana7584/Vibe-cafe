@@ -5,4 +5,4 @@ email-validator==2.2.0
 Werkzeug==3.0.3
 WTForms==3.2.1
 python-dotenv==1.0.1
-razorpay==1.4.2
+phonepe-pg-sdk-python

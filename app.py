@@ -12,22 +12,16 @@ try:
 except ImportError:
     pass
 
-try:
-    import razorpay
-except ImportError:
-    razorpay = None
+import phonepe_payments as phonepe
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "your-secret-key")
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///contact.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "")
-RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
-PAYMENTS_ENABLED = bool(RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET and razorpay)
+PAYMENTS_ENABLED = phonepe.is_phonepe_enabled()
 
 db = SQLAlchemy(app)
-
 # User model
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -39,6 +33,7 @@ class User(db.Model):
         return f"User('{self.username}', '{self.email}')"
 
 class Order(db.Model):
+    __tablename__ = "orders"
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     customer_name = db.Column(db.String(100), nullable=False)
@@ -49,7 +44,8 @@ class Order(db.Model):
     discount = db.Column(db.Float, default=0)
     total = db.Column(db.Float, nullable=False)
     payment_id = db.Column(db.String(100))
-    razorpay_order_id = db.Column(db.String(100))
+    merchant_order_id = db.Column(db.String(100))
+    phonepe_order_id = db.Column(db.String(100))
     status = db.Column(db.String(20), default='pending')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -63,10 +59,11 @@ def get_cart_totals(cart, member_discount=False):
     total = round(subtotal - discount, 2)
     return subtotal, discount, total
 
-def get_razorpay_client():
-    if not PAYMENTS_ENABLED:
-        return None
-    return razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
+def complete_paid_order(order, payment_id):
+    order.status = "paid"
+    order.payment_id = payment_id
+    db.session.commit()
+    session["cart"] = []
 
 # Sample menu items data
 MENU_ITEMS = {
@@ -193,14 +190,17 @@ def checkout():
         db.session.commit()
 
         if PAYMENTS_ENABLED:
-            client = get_razorpay_client()
-            razorpay_order = client.order.create({
-                "amount": int(total * 100),
-                "currency": "INR",
-                "receipt": f"order_{order.id}",
-            })
-            order.razorpay_order_id = razorpay_order["id"]
-            db.session.commit()
+            redirect_url = url_for("phonepe_callback", order_id=order.id, _external=True)
+            try:
+                merchant_order_id, pay_response = phonepe.initiate_payment(order, redirect_url)
+                order.merchant_order_id = merchant_order_id
+                order.phonepe_order_id = pay_response.order_id
+                db.session.commit()
+                return redirect(pay_response.redirect_url)
+            except Exception as exc:
+                db.session.delete(order)
+                db.session.commit()
+                flash(f"Could not start PhonePe payment: {exc}", "danger")
         else:
             order.status = "paid"
             order.payment_id = f"demo_{order.id}"
@@ -219,44 +219,68 @@ def checkout():
         total=total,
         is_member=is_member,
         payments_enabled=PAYMENTS_ENABLED,
-        order=order,
-        razorpay_key=RAZORPAY_KEY_ID,
+        payment_provider="phonepe",
     )
 
-@app.route("/payment/verify", methods=["POST"])
-def verify_payment():
-    if not PAYMENTS_ENABLED:
-        return jsonify({"success": False, "message": "Payments are not configured."}), 400
+@app.route("/payment/phonepe/callback/<int:order_id>")
+def phonepe_callback(order_id):
+    order = Order.query.get_or_404(order_id)
+    if order.status == "paid":
+        return redirect(url_for("payment_success", order_id=order.id))
 
-    data = request.get_json() or {}
-    payment_id = data.get("razorpay_payment_id")
-    order_id = data.get("razorpay_order_id")
-    signature = data.get("razorpay_signature")
+    if not PAYMENTS_ENABLED or not order.merchant_order_id:
+        flash("Payment is not configured for this order.", "warning")
+        return redirect(url_for("checkout"))
 
-    if not all([payment_id, order_id, signature]):
-        return jsonify({"success": False, "message": "Missing payment details."}), 400
-
-    client = get_razorpay_client()
     try:
-        client.utility.verify_payment_signature({
-            "razorpay_order_id": order_id,
-            "razorpay_payment_id": payment_id,
-            "razorpay_signature": signature,
-        })
-    except razorpay.errors.SignatureVerificationError:
-        return jsonify({"success": False, "message": "Payment verification failed."}), 400
+        status_response = phonepe.get_payment_status(order.merchant_order_id)
+    except Exception as exc:
+        flash(f"Could not verify payment status: {exc}", "danger")
+        return redirect(url_for("checkout"))
 
-    order = Order.query.filter_by(razorpay_order_id=order_id).first_or_404()
-    order.status = "paid"
-    order.payment_id = payment_id
-    db.session.commit()
-    session["cart"] = []
+    if status_response.state == "COMPLETED":
+        transaction_id = order.merchant_order_id
+        if status_response.payment_details:
+            transaction_id = status_response.payment_details[0].transaction_id or transaction_id
+        complete_paid_order(order, transaction_id)
+        flash("Payment successful!", "success")
+        return redirect(url_for("payment_success", order_id=order.id))
 
-    return jsonify({
-        "success": True,
-        "redirect": url_for("payment_success", order_id=order.id),
-    })
+    if status_response.state == "FAILED":
+        order.status = "failed"
+        db.session.commit()
+        flash("Payment failed. Please try again.", "danger")
+        return redirect(url_for("checkout"))
 
+    flash("Payment is still pending. Please wait or try again.", "warning")
+    return redirect(url_for("checkout"))
+
+@app.route("/payment/phonepe/webhook", methods=["POST"])
+def phonepe_webhook():
+    if not PAYMENTS_ENABLED:
+        return jsonify({"success": False}), 400
+
+    body = request.get_data(as_text=True)
+    authorization = request.headers.get("Authorization", "")
+
+    try:
+        callback = phonepe.validate_webhook(authorization, body)
+    except Exception:
+        return jsonify({"success": False}), 400
+
+    if not callback:
+        return jsonify({"success": False}), 401
+
+    merchant_order_id = getattr(callback.payload, "merchant_order_id", None)
+    if not merchant_order_id:
+        return jsonify({"success": True})
+
+    order = Order.query.filter_by(merchant_order_id=merchant_order_id).first()
+    if order and order.status != "paid" and callback.payload.state == "COMPLETED":
+        transaction_id = getattr(callback.payload, "transaction_id", merchant_order_id)
+        complete_paid_order(order, transaction_id)
+
+    return jsonify({"success": True})
 @app.route("/payment/success/<int:order_id>")
 def payment_success(order_id):
     order = Order.query.get_or_404(order_id)
