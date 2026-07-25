@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+
+# Flask / SQLite
+instance/
+*.db
+
+# Environment & secrets
+.env
+.env.*
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
+
+# Logs & test artifacts
+*.log
+test_fix.py

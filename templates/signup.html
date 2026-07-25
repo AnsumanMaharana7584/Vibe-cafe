@@ -369,10 +369,15 @@
         </div>
 
         <div class="flash-messages">
-            <!-- Flash messages would go here -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% for category, message in messages %}
+                    <div class="flash-message {{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endwith %}
         </div>
 
         <form class="signup-form" method="post" novalidate>
+            {{ form.hidden_tag() }}
             <div class="form-group">
                 <label class="form-label" for="username">
                     <i class="fas fa-user"></i>
@@ -483,7 +488,7 @@
 
         <div class="form-footer">
             <p>Already have an account?</p>
-            <a href="/login">Login here</a>
+            <a href="{{ url_for('login') }}">Login here</a>
         </div>
     </div>
 </div>

@@ -374,10 +374,15 @@
         </div>
 
         <div class="flash-messages">
-            <!-- Flash messages would go here -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% for category, message in messages %}
+                    <div class="flash-message {{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endwith %}
         </div>
 
-        <form id="loginForm" novalidate>
+        <form id="loginForm" method="post" novalidate>
+            {{ form.hidden_tag() }}
             <div class="form-group">
                 <label for="username">Username</label>
                 <div class="input-wrapper">
@@ -425,7 +430,7 @@
 
         <div class="form-footer">
             <p>Don't have an account?</p>
-            <a href="#signup">Sign up here to get 10% discount!</a>
+            <a href="{{ url_for('signup') }}">Sign up here to get 10% discount!</a>
         </div>
     </div>
 </div>
@@ -452,11 +457,11 @@
     }
 
     function isValidUsername(username) {
-        return username.trim().length >= 3;
+        return username.trim().length >= 4 && username.trim().length <= 15;
     }
 
     function isValidPassword(password) {
-        return password.length >= 6;
+        return password.length >= 5 && password.length <= 15;
     }
 
     // Validate field function
@@ -485,7 +490,7 @@
         // Real-time validation on blur
         if (usernameField) {
             usernameField.addEventListener('blur', function () {
-                validateField(this, isValidUsername, 'Username must be at least 3 characters long');
+                validateField(this, isValidUsername, 'Username must be 4-15 characters long');
             });
         }
 
@@ -497,7 +502,7 @@
 
         if (passwordField) {
             passwordField.addEventListener('blur', function () {
-                validateField(this, isValidPassword, 'Password must be at least 6 characters long');
+                validateField(this, isValidPassword, 'Password must be 5-15 characters long');
             });
         }
 
@@ -509,7 +514,7 @@
                 let isValid = true;
 
                 if (usernameField) {
-                    isValid &= validateField(usernameField, isValidUsername, 'Username must be at least 3 characters long');
+                    isValid &= validateField(usernameField, isValidUsername, 'Username must be 4-15 characters long');
                 }
 
                 if (emailField) {
@@ -517,27 +522,12 @@
                 }
 
                 if (passwordField) {
-                    isValid &= validateField(passwordField, isValidPassword, 'Password must be at least 6 characters long');
+                    isValid &= validateField(passwordField, isValidPassword, 'Password must be 5-15 characters long');
                 }
 
                 if (isValid) {
-                    // Show loading state
                     submitBtn.classList.add('loading');
-
-                    // Simulate form submission delay
-                    setTimeout(() => {
-                        submitBtn.classList.remove('loading');
-                        const flashDiv = document.createElement('div');
-                        flashDiv.className = 'flash-message success';
-                        flashDiv.textContent = 'Login successful! Redirecting...';
-                        document.querySelector('.flash-messages').appendChild(flashDiv);
-
-                        // Redirect to home page after showing success message
-                        setTimeout(() => {
-                            window.location.href = '/';  // Redirect URL, change if needed
-                        }, 1500);
-
-                    }, 2000);
+                    form.submit();
                 }
             });
         }

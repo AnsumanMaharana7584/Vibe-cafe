@@ -13,7 +13,7 @@ class SignupForm(FlaskForm):
     )
     gender = SelectField(
         "Gender",
-        choices=["male","female","other"],
+        choices=["male","female","other","prefer-not-to-say"],
          validators=[Optional()]
     )
     dob = DateField(

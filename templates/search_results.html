@@ -11,7 +11,7 @@
         <ul class="list-group shadow-sm rounded overflow-hidden">
             {% for result in results %}
                 <li class="list-group-item d-flex justify-content-between align-items-center" style="background-color: #fdf8f3;">
-                    <a href="{{ url_for('menu') }}#{{ result.name|lower|replace(' ', '-')|replace('&', 'and') }}" class="text-decoration-none" style="color: #5d432c; font-weight: 600;">
+                    <a href="{{ result.url }}" class="text-decoration-none" style="color: #5d432c; font-weight: 600;">
                         <i class="fas fa-mug-hot me-2" style="color: #d4af37;"></i>{{ result.name }}
                     </a>
                     <span class="badge rounded-pill" style="background-color: #d4af37; color: #2c1810;">{{ result.type }}</span>
