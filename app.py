@@ -1,13 +1,30 @@
 from flask import Flask, render_template, flash, redirect, url_for, request, jsonify, session, abort
 from flask_sqlalchemy import SQLAlchemy
-from forms import SignupForm, LoginForm
+from forms import SignupForm, LoginForm, CheckoutForm
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
+import json
+import os
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+try:
+    import razorpay
+except ImportError:
+    razorpay = None
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = "your-secret-key"  # Replace with a secure secret key in production
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "your-secret-key")
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///contact.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "")
+RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
+PAYMENTS_ENABLED = bool(RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET and razorpay)
 
 db = SQLAlchemy(app)
 
@@ -16,10 +33,40 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(20), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    password = db.Column(db.String(128), nullable=False)  # Hashed password
+    password = db.Column(db.String(128), nullable=False)
 
     def __repr__(self):
         return f"User('{self.username}', '{self.email}')"
+
+class Order(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    customer_name = db.Column(db.String(100), nullable=False)
+    customer_email = db.Column(db.String(120), nullable=False)
+    customer_phone = db.Column(db.String(20), nullable=False)
+    items_json = db.Column(db.Text, nullable=False)
+    subtotal = db.Column(db.Float, nullable=False)
+    discount = db.Column(db.Float, default=0)
+    total = db.Column(db.Float, nullable=False)
+    payment_id = db.Column(db.String(100))
+    razorpay_order_id = db.Column(db.String(100))
+    status = db.Column(db.String(20), default='pending')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    @property
+    def items(self):
+        return json.loads(self.items_json)
+
+def get_cart_totals(cart, member_discount=False):
+    subtotal = sum(float(item['price']) for item in cart)
+    discount = round(subtotal * 0.10, 2) if member_discount else 0
+    total = round(subtotal - discount, 2)
+    return subtotal, discount, total
+
+def get_razorpay_client():
+    if not PAYMENTS_ENABLED:
+        return None
+    return razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
 # Sample menu items data
 MENU_ITEMS = {
@@ -112,6 +159,111 @@ def clear_cart():
     session['cart'] = []
     flash("Cart cleared.", "info")
     return redirect(url_for('cart'))
+
+@app.route("/checkout", methods=["GET", "POST"])
+def checkout():
+    cart = session.get("cart", [])
+    if not cart:
+        flash("Your cart is empty.", "warning")
+        return redirect(url_for("cart"))
+
+    form = CheckoutForm()
+    is_member = "user_id" in session
+    subtotal, discount, total = get_cart_totals(cart, is_member)
+
+    if "user_id" in session:
+        user = User.query.get(session["user_id"])
+        if user and request.method == "GET":
+            form.name.data = user.username
+            form.email.data = user.email
+
+    order = None
+    if form.validate_on_submit():
+        order = Order(
+            user_id=session.get("user_id"),
+            customer_name=form.name.data,
+            customer_email=form.email.data,
+            customer_phone=form.phone.data,
+            items_json=json.dumps(cart),
+            subtotal=subtotal,
+            discount=discount,
+            total=total,
+        )
+        db.session.add(order)
+        db.session.commit()
+
+        if PAYMENTS_ENABLED:
+            client = get_razorpay_client()
+            razorpay_order = client.order.create({
+                "amount": int(total * 100),
+                "currency": "INR",
+                "receipt": f"order_{order.id}",
+            })
+            order.razorpay_order_id = razorpay_order["id"]
+            db.session.commit()
+        else:
+            order.status = "paid"
+            order.payment_id = f"demo_{order.id}"
+            db.session.commit()
+            session["cart"] = []
+            flash("Payment successful (demo mode)!", "success")
+            return redirect(url_for("payment_success", order_id=order.id))
+
+    return render_template(
+        "checkout.html",
+        title="Checkout",
+        form=form,
+        cart=cart,
+        subtotal=subtotal,
+        discount=discount,
+        total=total,
+        is_member=is_member,
+        payments_enabled=PAYMENTS_ENABLED,
+        order=order,
+        razorpay_key=RAZORPAY_KEY_ID,
+    )
+
+@app.route("/payment/verify", methods=["POST"])
+def verify_payment():
+    if not PAYMENTS_ENABLED:
+        return jsonify({"success": False, "message": "Payments are not configured."}), 400
+
+    data = request.get_json() or {}
+    payment_id = data.get("razorpay_payment_id")
+    order_id = data.get("razorpay_order_id")
+    signature = data.get("razorpay_signature")
+
+    if not all([payment_id, order_id, signature]):
+        return jsonify({"success": False, "message": "Missing payment details."}), 400
+
+    client = get_razorpay_client()
+    try:
+        client.utility.verify_payment_signature({
+            "razorpay_order_id": order_id,
+            "razorpay_payment_id": payment_id,
+            "razorpay_signature": signature,
+        })
+    except razorpay.errors.SignatureVerificationError:
+        return jsonify({"success": False, "message": "Payment verification failed."}), 400
+
+    order = Order.query.filter_by(razorpay_order_id=order_id).first_or_404()
+    order.status = "paid"
+    order.payment_id = payment_id
+    db.session.commit()
+    session["cart"] = []
+
+    return jsonify({
+        "success": True,
+        "redirect": url_for("payment_success", order_id=order.id),
+    })
+
+@app.route("/payment/success/<int:order_id>")
+def payment_success(order_id):
+    order = Order.query.get_or_404(order_id)
+    if order.status != "paid":
+        flash("Payment is not complete for this order.", "warning")
+        return redirect(url_for("checkout"))
+    return render_template("payment_success.html", title="Order Confirmed", order=order)
 
 @app.route("/search")
 def search():

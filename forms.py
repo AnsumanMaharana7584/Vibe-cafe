@@ -48,6 +48,18 @@ class LoginForm(FlaskForm):
     )
     submit = SubmitField("Log In")
 
-    
-
+class CheckoutForm(FlaskForm):
+    name = StringField(
+        "Full Name",
+        validators=[DataRequired(), Length(2, 100)]
+    )
+    email = StringField(
+        "Email",
+        validators=[DataRequired(), Email()]
+    )
+    phone = StringField(
+        "Phone",
+        validators=[DataRequired(), Length(10, 15)]
+    )
+    submit = SubmitField("Proceed to Payment")
 

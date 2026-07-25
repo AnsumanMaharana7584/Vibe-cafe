@@ -6,7 +6,8 @@ A Flask web app for **Vibe Cafe** — browse the menu, search items, manage a ca
 
 - Menu browsing with item detail pages
 - Shopping cart (session-based)
-- User signup and login
+- Checkout with Razorpay payments (demo mode without API keys)
+- User signup and login with 10% member discount
 - Search across menu items and users
 - Member discount page
 
@@ -40,6 +41,28 @@ A Flask web app for **Vibe Cafe** — browse the menu, search items, manage a ca
    ```
 
    Open [http://127.0.0.1:5000](http://127.0.0.1:5000) in your browser.
+
+## Payment setup
+
+The app supports **Razorpay** for INR payments. Without API keys, it runs in **demo mode** (orders complete instantly with no real charge).
+
+1. Copy the example env file:
+
+   ```bash
+   copy .env.example .env        # Windows
+   # cp .env.example .env        # macOS / Linux
+   ```
+
+2. Add your Razorpay test keys from [dashboard.razorpay.com](https://dashboard.razorpay.com/):
+
+   ```
+   RAZORPAY_KEY_ID=rzp_test_xxxxx
+   RAZORPAY_KEY_SECRET=your_secret_key
+   ```
+
+3. Restart the app, add items to cart, and go to **Checkout**.
+
+Logged-in members automatically receive a **10% discount** at checkout.
 
 ## Project structure
 
